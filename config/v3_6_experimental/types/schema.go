@@ -25,6 +25,7 @@ type Config struct {
 	Passwd          Passwd          `json:"passwd,omitempty"`
 	Storage         Storage         `json:"storage,omitempty"`
 	Systemd         Systemd         `json:"systemd,omitempty"`
+	Template        []Template      `json:"template,omitempty"`
 }
 
 type Device string
@@ -244,6 +245,15 @@ type Tang struct {
 	Advertisement *string `json:"advertisement,omitempty"`
 	Thumbprint    *string `json:"thumbprint,omitempty"`
 	URL           string  `json:"url,omitempty"`
+}
+
+type Template struct {
+	Tag    string         `json:"tag"`
+	Remote TemplateRemote `json:"remote"`
+}
+
+type TemplateRemote struct {
+	URL string `json:"url"`
 }
 
 type Timeouts struct {

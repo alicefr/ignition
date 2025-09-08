@@ -17,6 +17,9 @@
     },
     "kernelArguments": {
       "$ref": "#/definitions/kernelArguments"
+    },
+    "template": {
+      "$ref": "#/definitions/template"
     }
   },
   "required": [
@@ -679,6 +682,27 @@
               "name"
           ]
         }
+      }
+    },
+    "template": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "tag": {
+            "type": "string"
+          },
+          "remote": {
+            "type": "object",
+            "properties": {
+              "url": {
+                "type": "string"
+              }
+            },
+            "required": ["url"]
+          }
+        },
+        "required": ["tag", "remote"]
       }
     }
   }

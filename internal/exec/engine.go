@@ -125,7 +125,15 @@ func (e Engine) Run(stageName string) error {
 	defer e.Logger.PopPrefix()
 
 	fullConfig := latest.Merge(baseConfig, latest.Merge(systemBaseConfig, cfg))
-	err = stages.Get(stageName).Create(e.Logger, e.Root, *e.Fetcher, e.State).Run(fullConfig)
+
+	// Resolve template variables if present
+	resolvedConfig, err := resolveTemplates(fullConfig, e.Fetcher, e.Logger)
+	if err != nil {
+		e.Logger.Crit("failed to resolve template variables: %v", err)
+		return err
+	}
+
+	err = stages.Get(stageName).Create(e.Logger, e.Root, *e.Fetcher, e.State).Run(resolvedConfig)
 	if err == resource.ErrNeedNet && stageName == "fetch-offline" {
 		err = e.signalNeedNet()
 		if err != nil {
@@ -136,7 +144,7 @@ func (e Engine) Run(stageName string) error {
 	if err != nil {
 		// e.Logger could be nil
 		fmt.Fprintf(os.Stderr, "%s failed\n", stageName)
-		tmp, jsonerr := json.MarshalIndent(fullConfig, "", "  ")
+		tmp, jsonerr := json.MarshalIndent(resolvedConfig, "", "  ")
 		if jsonerr != nil {
 			// Nothing else to do with this error
 			fmt.Fprintf(os.Stderr, "Could not marshal full config: %v\n", jsonerr)
