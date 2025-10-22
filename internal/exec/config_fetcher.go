@@ -22,6 +22,7 @@ import (
 
 	"github.com/coreos/ignition/v2/config"
 	"github.com/coreos/ignition/v2/config/shared/errors"
+	"github.com/coreos/ignition/v2/internal/attestation"
 	"github.com/coreos/ignition/v2/internal/log"
 	"github.com/coreos/ignition/v2/internal/resource"
 	"github.com/coreos/ignition/v2/internal/state"
@@ -32,9 +33,10 @@ import (
 )
 
 type ConfigFetcher struct {
-	Logger  *log.Logger
-	Fetcher *resource.Fetcher
-	State   *state.State
+	Logger       *log.Logger
+	Fetcher      *resource.Fetcher
+	State        *state.State
+	PlatformName string
 }
 
 // RenderConfig evaluates "ignition.config.replace" and "ignition.config.merge"
@@ -95,6 +97,8 @@ func (f *ConfigFetcher) fetchReferencedConfig(cfgRef types.Resource) (types.Conf
 		f.Logger.Crit("invalid referenced config: %v", errors.ErrSourceRequired)
 		return types.Config{}, errors.ErrSourceRequired
 	}
+
+	// Parse the config source URL first to check if we need attestation
 	u, err := url.Parse(*cfgRef.Source)
 	if err != nil {
 		return types.Config{}, err
@@ -141,6 +145,10 @@ func (f *ConfigFetcher) fetchReferencedConfig(cfgRef types.Resource) (types.Conf
 		Source:     u.Path,
 		Referenced: true,
 	})
+
+	if err := attestation.HandleAttestation(f.Logger, &cfg, f.PlatformName); err != nil {
+		return types.Config{}, err
+	}
 
 	return cfg, nil
 }

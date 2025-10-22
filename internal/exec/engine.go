@@ -26,6 +26,7 @@ import (
 	"github.com/coreos/ignition/v2/config/shared/errors"
 	latest "github.com/coreos/ignition/v2/config/v3_6_experimental"
 	"github.com/coreos/ignition/v2/config/v3_6_experimental/types"
+	"github.com/coreos/ignition/v2/internal/attestation"
 	"github.com/coreos/ignition/v2/internal/exec/stages"
 	executil "github.com/coreos/ignition/v2/internal/exec/util"
 	"github.com/coreos/ignition/v2/internal/log"
@@ -145,6 +146,7 @@ func (e Engine) Run(stageName string) error {
 		}
 		return err
 	}
+
 	e.Logger.Info("%s passed", stageName)
 	return nil
 }
@@ -315,6 +317,17 @@ func (e *Engine) fetchProviderConfig() (types.Config, error) {
 		Referenced: false,
 	})
 
+	if err := attestation.HandleAttestation(e.Logger, &cfg, e.PlatformConfig.Name()); err != nil {
+		if err == resource.ErrNeedNet {
+			err = e.signalNeedNet()
+			if err != nil {
+				e.Logger.Crit("failed to signal neednet: %v", err)
+			}
+			return cfg, resource.ErrNeedNet
+		}
+		return types.Config{}, err
+	}
+
 	// Replace the HTTP client in the fetcher to be configured with the
 	// timeouts of the config
 	err = e.Fetcher.UpdateHttpTimeoutsAndCAs(cfg.Ignition.Timeouts, cfg.Ignition.Security.TLS.CertificateAuthorities, cfg.Ignition.Proxy)
@@ -323,9 +336,10 @@ func (e *Engine) fetchProviderConfig() (types.Config, error) {
 	}
 
 	configFetcher := ConfigFetcher{
-		Logger:  e.Logger,
-		Fetcher: e.Fetcher,
-		State:   e.State,
+		Logger:       e.Logger,
+		Fetcher:      e.Fetcher,
+		State:        e.State,
+		PlatformName: e.PlatformConfig.Name(),
 	}
 
 	return configFetcher.RenderConfig(cfg)
