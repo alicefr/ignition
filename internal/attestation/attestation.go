@@ -22,6 +22,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -141,14 +142,17 @@ func AttestationKeyRegistration(logger *log.Logger, registration types.Registrat
 	}
 
 	requestBody := map[string]string{
-		"attestation_key": attestationKey,
-		"platform":        platform,
+		"public_key": attestationKey,
+		"platform":   platform,
 	}
 
 	jsonBody, err := json.Marshal(requestBody)
 	if err != nil {
 		return fmt.Errorf("failed to marshal request body: %w", err)
 	}
+
+	logger.Info("Registering attestation key with URL: %s", *registration.Url)
+	logger.Info("Request body: %s", string(jsonBody))
 
 	client := &http.Client{}
 
@@ -173,16 +177,22 @@ func AttestationKeyRegistration(logger *log.Logger, registration types.Registrat
 
 	resp, err := client.Do(req)
 	if err != nil {
-		// Return network errors as ErrNeedNet for caller to handle
-		if isNetworkUnreachable(err) {
-			return resource.ErrNeedNet
-		}
-		return fmt.Errorf("failed to register attestation key: %w", err)
+		logger.Info("HTTP request failed: %v", err)
+		return resource.ErrNeedNet
 	}
 
 	defer resp.Body.Close()
 
+	logger.Info("Received response with status code: %d", resp.StatusCode)
+
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		// Read response body to get error details
+		bodyBytes, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			logger.Info("Failed to read error response body: %v", readErr)
+			return fmt.Errorf("registration failed with status code: %d", resp.StatusCode)
+		}
+		logger.Info("Registration failed - Status: %d, Response body: %s", resp.StatusCode, string(bodyBytes))
 		return fmt.Errorf("registration failed with status code: %d", resp.StatusCode)
 	}
 
