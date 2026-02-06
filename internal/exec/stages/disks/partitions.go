@@ -445,12 +445,19 @@ func (s stage) partitionDisk(dev types.Disk, devAlias string) error {
 			s.Info("partition %d found with correct specifications", part.Number)
 			// For sfdisk, we need to include matching partitions in the operation
 			// because sfdisk replaces the entire partition table with the script content.
-			// Populate the partition with existing values to ensure it's preserved.
+			// Populate the partition with existing values to ensure it's preserved,
+			// but prefer spec values when explicitly set.
 			part.StartSector = &info.StartSector
 			part.SizeInSectors = &info.SizeInSectors
-			part.TypeGUID = &info.TypeGUID
-			part.GUID = &info.GUID
-			part.Label = &info.Label
+			if !cutil.NotEmpty(part.TypeGUID) {
+				part.TypeGUID = &info.TypeGUID
+			}
+			if !cutil.NotEmpty(part.GUID) {
+				part.GUID = &info.GUID
+			}
+			if part.Label == nil {
+				part.Label = &info.Label
+			}
 			op.CreatePartition(part)
 		case exists && shouldExist && !wipeEntry && !matches:
 			if partitionMatchesResize(info, part) {
