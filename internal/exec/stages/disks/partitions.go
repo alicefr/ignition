@@ -192,18 +192,11 @@ func (s stage) getRealStartAndSize(dev types.Disk, devAlias string, diskInfo uti
 			if part.SizeInSectors != nil {
 				part.SizeInSectors = &dims.Size
 			}
-		} else {
-			// If we couldn't resolve zero-values via Pretend/ParseOutput (e.g., sfdisk),
-			// treat 0 as "don't care" for matching by clearing them here. The sfdisk
-			// script was already queued earlier with the original values (including size=+),
-			// so this only affects subsequent matching logic.
-			if part.StartSector != nil && *part.StartSector == 0 {
-				part.StartSector = nil
-			}
-			if part.SizeInSectors != nil && *part.SizeInSectors == 0 {
-				part.SizeInSectors = nil
-			}
 		}
+		// Note: We intentionally keep StartSector=0 and SizeInSectors=0 even if
+		// Pretend/ParseOutput failed to resolve them. These zero values have special
+		// meaning in sfdisk (size=0 writes "size=+" to fill remaining space), and
+		// clearing them to nil would cause incorrect partition matching behavior.
 		result = append(result, part)
 	}
 	return result, nil
@@ -419,6 +412,7 @@ func (s stage) partitionDisk(dev types.Disk, devAlias string) error {
 	for _, part := range resolvedPartitions {
 		shouldExist := partitionShouldExist(part)
 		info, exists := diskInfo.GetPartition(part.Number)
+		s.Info("XXX partition info: %v", info)
 		var matchErr error
 		if exists {
 			matchErr = partitionMatches(info, part)
@@ -436,11 +430,13 @@ func (s stage) partitionDisk(dev types.Disk, devAlias string) error {
 		case !exists && shouldExist:
 			op.CreatePartition(part)
 			modification = true
+			s.Info("XXX partition %d doesn't exists but it shoudl", part.Number)
 		case exists && !shouldExist && !wipeEntry:
 			return fmt.Errorf("partition %d exists but is specified as nonexistant and wipePartitionEntry is false", part.Number)
 		case exists && !shouldExist && wipeEntry:
 			op.DeletePartition(part.Number)
 			modification = true
+			s.Info("XXX partition %d exists but it shouldn't and has a wipe entry", part.Number)
 		case exists && shouldExist && matches:
 			s.Info("partition %d found with correct specifications", part.Number)
 			// For sfdisk, we need to include matching partitions in the operation
@@ -468,6 +464,7 @@ func (s stage) partitionDisk(dev types.Disk, devAlias string) error {
 				op.CreatePartition(part)
 				modification = true
 			} else {
+				s.Info("XXX partition %d exists, it should, no wipe entry, no match", part.Number)
 				return fmt.Errorf("partition %d didn't match: %v", part.Number, matchErr)
 			}
 		case exists && shouldExist && wipeEntry && !matches:
@@ -476,11 +473,13 @@ func (s stage) partitionDisk(dev types.Disk, devAlias string) error {
 			// Ensure we preserve the existing start if unspecified or zero so the filesystem
 			// remains at the same offset and mountable after recreation (important for sfdisk).
 			if part.StartSector == nil || (part.StartSector != nil && *part.StartSector == 0) {
+				s.Info("XXX partition %d empty start sector with info startSector", part.Number, info.StartSector)
 				part.StartSector = &info.StartSector
 			}
 			op.CreatePartition(part)
 			modification = true
 		default:
+			s.Info("XXX partition %d default", part.Number)
 			// unfortunatey, golang doesn't check that all cases are handled exhaustively
 			return fmt.Errorf("unreachable code reached when processing partition %d. golang--", part.Number)
 		}
