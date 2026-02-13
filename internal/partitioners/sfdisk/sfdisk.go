@@ -234,6 +234,14 @@ func (op *Operation) writePartitionLine(script *bytes.Buffer, p partitioners.Par
 	script.WriteString("\n")
 }
 
+func findNextAvailable(existing map[int]partitioners.Partition) int {
+	for i := 1; ; i++ {
+		if _, exists := existing[i]; !exists {
+			return i
+		}
+	}
+}
+
 // Pretend is like Commit() but uses the --no-act flag and returns the output
 func (op *Operation) Pretend() (string, error) {
 	if err := op.handleInfo(); err != nil {
@@ -257,6 +265,9 @@ func (op *Operation) Pretend() (string, error) {
 
 	// Apply creations/modifications
 	for _, p := range op.parts {
+		if p.Number == 0 {
+			p.Number = findNextAvailable(existingParts)
+		}
 		existingParts[p.Number] = p
 	}
 
@@ -332,6 +343,9 @@ func (op *Operation) Commit() error {
 
 	// Apply creations/modifications
 	for _, p := range op.parts {
+		if p.Number == 0 {
+			p.Number = findNextAvailable(existingParts)
+		}
 		existingParts[p.Number] = p
 	}
 
