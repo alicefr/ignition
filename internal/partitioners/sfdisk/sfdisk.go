@@ -199,6 +199,31 @@ func (op *Operation) buildCompleteScript(partitions map[int]partitioners.Partiti
 	return script.String()
 }
 
+// getTotalSectors returns the total number of sectors on the disk
+func (op *Operation) getTotalSectors() (int64, error) {
+	cmd := exec.Command(distro.SfdiskCmd(), "--list", op.dev)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get disk info: %v", err)
+	}
+
+	// Parse output to find total sectors
+	// Format: "Disk /dev/xxx: 6.46 GiB, 6931104256 bytes, 13537313 sectors"
+	// We need to capture the number right before "sectors"
+	re := regexp.MustCompile(`Disk\s+` + regexp.QuoteMeta(op.dev) + `:.*,\s+(\d+)\s+sectors`)
+	matches := re.FindSubmatch(output)
+	if len(matches) < 2 {
+		return 0, fmt.Errorf("could not parse total sectors from sfdisk output")
+	}
+
+	totalSectors, err := strconv.ParseInt(string(matches[1]), 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse total sectors: %v", err)
+	}
+
+	return totalSectors, nil
+}
+
 // writePartitionLine writes a single partition line to the script
 func (op *Operation) writePartitionLine(script *bytes.Buffer, p partitioners.Partition) {
 	if p.Number != 0 {
@@ -215,8 +240,28 @@ func (op *Operation) writePartitionLine(script *bytes.Buffer, p partitioners.Par
 	if p.SizeInSectors != nil && *p.SizeInSectors != 0 {
 		fmt.Fprintf(script, "size=%d ", *p.SizeInSectors)
 	} else if p.SizeInSectors != nil && *p.SizeInSectors == 0 {
-		// Use size=+ to fill remaining space (like sgdisk "+0")
-		script.WriteString("size=+ ")
+		// Calculate exact size to fill to the last usable LBA
+		// For GPT, last usable LBA = total_sectors - 34 (secondary GPT header)
+		if p.StartSector != nil && *p.StartSector != 0 {
+			totalSectors, err := op.getTotalSectors()
+			if err == nil {
+				lastUsableLBA := totalSectors - 34
+				exactSize := lastUsableLBA - *p.StartSector + 1
+				if exactSize > 0 {
+					fmt.Fprintf(script, "size=%d ", exactSize)
+				} else {
+					// Fall back to size=+ if calculation fails
+					script.WriteString("size=+ ")
+				}
+			} else {
+				// Fall back to size=+ if we can't get total sectors
+				op.logger.Warning("failed to calculate exact size for partition %d, using size=+: %v", p.Number, err)
+				script.WriteString("size=+ ")
+			}
+		} else {
+			// If start is not specified or is 0, use size=+
+			script.WriteString("size=+ ")
+		}
 	}
 
 	if util.NotEmpty(p.TypeGUID) {
