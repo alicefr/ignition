@@ -449,7 +449,11 @@ func (s stage) partitionDisk(dev types.Disk, devAlias string) error {
 			part.StartSector = &info.StartSector
 			part.SizeInSectors = &info.SizeInSectors
 			part.TypeGUID = &info.TypeGUID
-			part.GUID = &info.GUID
+			// The GUID was skipped for the match checking, take the one from the info if the one in
+			// the spec isn't set
+			if !cutil.NotEmpty(part.GUID) {
+				part.GUID = &info.GUID
+			}
 			part.Label = &info.Label
 			op.CreatePartition(part)
 		case exists && shouldExist && !wipeEntry && !matches:
