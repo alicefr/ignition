@@ -504,5 +504,18 @@ func (s stage) partitionDisk(dev types.Disk, devAlias string) error {
 		return fmt.Errorf("failed to wait for udev on %q after partitioning: %v", blockDevResolved, err)
 	}
 
+	// Print all resulting partitions
+	finalDiskInfo, err := s.getPartitionMap(devAlias)
+	if err != nil {
+		s.Logger.Warning("failed to read final partition table for logging: %v", err)
+	} else {
+		s.Info("final partition table for %q:", devAlias)
+		for _, partInfo := range finalDiskInfo.Partitions {
+			s.Info("  partition %d: start=%d size=%d typeGUID=%s label=%q GUID=%s",
+				partInfo.Number, partInfo.StartSector, partInfo.SizeInSectors,
+				partInfo.TypeGUID, partInfo.Label, partInfo.GUID)
+		}
+	}
+
 	return nil
 }
